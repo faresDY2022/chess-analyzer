@@ -177,4 +177,5 @@ def load_fen():
 if __name__ == "__main__":
     print("\n  Chess Analyzer UI")
     print("  Open http://localhost:8080 in your browser\n")
-    app.run(debug=False, port=8080)
+    port = int(os.environ.get("PORT", 8080))
+    app.run(debug=False, host="0.0.0.0", port=port)
