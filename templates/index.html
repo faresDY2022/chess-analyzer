@@ -507,14 +507,33 @@
 <script>
 const game = new Chess();
 let boardUI = null;
+let moveHistory = [];
 
 // Accuracy slider
 const accuracySlider = document.getElementById('accuracySlider');
-const accuracyValue = document.getElementById('accuracyValue');
+const accuracyValueEl = document.getElementById('accuracyValue');
 accuracySlider.addEventListener('input', () => {
-  accuracyValue.textContent = accuracySlider.value + '%';
+  accuracyValueEl.textContent = accuracySlider.value + '%';
 });
 function getAccuracy() { return parseInt(accuracySlider.value); }
+
+function requestAnalysis() {
+  setLoading(true);
+  fetch('/api/analyze', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fen: game.fen(), accuracy: getAccuracy() })
+  })
+  .then(r => r.json())
+  .then(data => {
+    setLoading(false);
+    if (data.analysis) {
+      renderAnalysis(data.analysis);
+      renderRecommended(data.analysis, data.recommended);
+    }
+  })
+  .catch(() => setLoading(false));
+}
 
 function onDragStart(source, piece) {
   if (game.game_over()) return false;
@@ -525,76 +544,53 @@ function onDragStart(source, piece) {
 }
 
 function onDrop(source, target) {
-  // Try normal move, then promotion
   let move = game.move({ from: source, to: target, promotion: 'q' });
   if (move === null) return 'snapback';
 
-  // Send to backend
-  const uci = source + target;
-  setLoading(true);
-  fetch('/api/move', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ uci: uci, accuracy: getAccuracy() })
-  })
-  .then(r => r.json())
-  .then(data => {
-    setLoading(false);
-    if (data.error) {
-      game.undo();
-      boardUI.position(game.fen());
-      return;
-    }
-    updateUI(data);
-  })
-  .catch(() => {
-    setLoading(false);
-    game.undo();
-    boardUI.position(game.fen());
+  // Track history
+  moveHistory.push({
+    san: move.san,
+    number: Math.ceil(moveHistory.length / 2 + 0.5),
+    color: move.color === 'w' ? 'white' : 'black'
   });
+
+  updateLocalUI();
+  requestAnalysis();
 }
 
 function onSnapEnd() {
   boardUI.position(game.fen());
 }
 
-function updateUI(data) {
-  // Sync client game with server
-  game.load(data.fen);
-  boardUI.position(data.fen, false);
+function updateLocalUI() {
+  boardUI.position(game.fen(), false);
 
   // Turn
-  const dot = document.getElementById('turnDot');
-  const turnText = document.getElementById('turnText');
-  dot.className = 'turn-dot ' + data.turn;
-  turnText.textContent = (data.turn === 'white' ? 'White' : 'Black') + ' to move';
+  const turn = game.turn() === 'w' ? 'white' : 'black';
+  document.getElementById('turnDot').className = 'turn-dot ' + turn;
+  document.getElementById('turnText').textContent =
+    (turn === 'white' ? 'White' : 'Black') + ' to move';
 
-  // Check
+  // Check / game over
   const checkBadge = document.getElementById('checkBadge');
-  if (data.isCheck) {
+  if (game.in_check()) {
     checkBadge.style.display = 'inline';
-  } else if (data.isGameOver) {
+    checkBadge.textContent = 'CHECK';
+  } else if (game.game_over()) {
     checkBadge.style.display = 'inline';
-    checkBadge.textContent = data.result === '1-0' ? 'WHITE WINS' :
-                             data.result === '0-1' ? 'BLACK WINS' : 'DRAW';
+    if (game.in_checkmate()) {
+      checkBadge.textContent = turn === 'white' ? 'BLACK WINS' : 'WHITE WINS';
+    } else {
+      checkBadge.textContent = 'DRAW';
+    }
   } else {
     checkBadge.style.display = 'none';
-    checkBadge.textContent = 'CHECK';
   }
 
-  // Analysis + recommended
-  if (data.analysis) {
-    renderAnalysis(data.analysis, data.turn);
-    renderRecommended(data.analysis, data.recommended);
-  }
-
-  // Move history
-  if (data.moveStack) {
-    renderHistory(data.moveStack);
-  }
+  renderHistory();
 }
 
-function renderAnalysis(analysis, turn) {
+function renderAnalysis(analysis) {
   const panel = document.getElementById('analysisPanel');
   const evalBar = document.getElementById('evalBar');
   const evalScore = document.getElementById('evalScore');
@@ -606,7 +602,6 @@ function renderAnalysis(analysis, turn) {
 
   const topScore = analysis[0].score;
 
-  // Update eval bar and score
   if (typeof topScore === 'number') {
     const clamped = Math.max(-10, Math.min(10, topScore / 100));
     const pct = 50 + (clamped * 5);
@@ -615,7 +610,6 @@ function renderAnalysis(analysis, turn) {
     evalScore.textContent = (topScore >= 0 ? '+' : '') + display;
     evalScore.className = 'eval-score ' + (topScore >= 0 ? 'positive' : 'negative');
   } else {
-    // Mate score
     evalScore.textContent = topScore;
     evalScore.className = 'eval-score mate';
     evalBar.style.width = topScore.includes('-') ? '5%' : '95%';
@@ -665,19 +659,20 @@ function renderRecommended(analysis, pickIndex) {
     </div>`;
 }
 
-function renderHistory(moves) {
+function renderHistory() {
   const el = document.getElementById('moveHistory');
-  if (!moves || moves.length === 0) {
+  if (moveHistory.length === 0) {
     el.innerHTML = '<div class="empty-state">No moves yet</div>';
     return;
   }
 
   let html = '';
-  for (let i = 0; i < moves.length; i += 2) {
-    const w = moves[i];
-    const b = moves[i + 1];
+  for (let i = 0; i < moveHistory.length; i += 2) {
+    const w = moveHistory[i];
+    const b = moveHistory[i + 1];
+    const num = Math.floor(i / 2) + 1;
     html += `<div class="move-row">
-      <span class="move-number">${w.number}.</span>
+      <span class="move-number">${num}.</span>
       <span class="move-white">${w.san}</span>
       <span class="move-black">${b ? b.san : ''}</span>
     </div>`;
@@ -691,28 +686,22 @@ function setLoading(on) {
 }
 
 function newGame() {
-  fetch('/api/reset', { method: 'POST' })
-    .then(r => r.json())
-    .then(data => {
-      game.reset();
-      boardUI.start(false);
-      updateUI(data);
-      document.getElementById('analysisPanel').innerHTML = '<div class="empty-state">Make a move or click Analyze</div>';
-      document.getElementById('recommendedPanel').innerHTML = '<div class="empty-state">Make a move to get a suggestion</div>';
-      document.getElementById('evalBar').style.width = '50%';
-      document.getElementById('evalScore').textContent = '0.00';
-      document.getElementById('evalScore').className = 'eval-score positive';
-    });
+  game.reset();
+  moveHistory = [];
+  boardUI.start(false);
+  updateLocalUI();
+  document.getElementById('analysisPanel').innerHTML = '<div class="empty-state">Make a move or click Analyze</div>';
+  document.getElementById('recommendedPanel').innerHTML = '<div class="empty-state">Make a move to get a suggestion</div>';
+  document.getElementById('evalBar').style.width = '50%';
+  document.getElementById('evalScore').textContent = '0.00';
+  document.getElementById('evalScore').className = 'eval-score positive';
 }
 
 function undoMove() {
-  fetch('/api/undo', { method: 'POST' })
-    .then(r => r.json())
-    .then(data => {
-      game.load(data.fen);
-      boardUI.position(data.fen, true);
-      updateUI(data);
-    });
+  game.undo();
+  moveHistory.pop();
+  boardUI.position(game.fen(), true);
+  updateLocalUI();
 }
 
 function flipBoard() {
@@ -720,38 +709,20 @@ function flipBoard() {
 }
 
 function analyzePosition() {
-  setLoading(true);
-  fetch('/api/analyze', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ accuracy: getAccuracy() })
-  })
-    .then(r => r.json())
-    .then(data => {
-      setLoading(false);
-      updateUI(data);
-    })
-    .catch(() => setLoading(false));
+  requestAnalysis();
 }
 
 function loadFen() {
   const fen = document.getElementById('fenInput').value.trim();
   if (!fen) return;
-  fetch('/api/fen', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ fen: fen })
-  })
-  .then(r => r.json())
-  .then(data => {
-    if (data.error) {
-      alert('Invalid FEN: ' + data.error);
-      return;
-    }
-    game.load(data.fen);
-    boardUI.position(data.fen, false);
-    updateUI(data);
-  });
+  if (!game.load(fen)) {
+    alert('Invalid FEN');
+    return;
+  }
+  moveHistory = [];
+  boardUI.position(fen, false);
+  updateLocalUI();
+  requestAnalysis();
 }
 
 // Init board
@@ -765,7 +736,6 @@ boardUI = Chessboard('board', {
   animationDuration: 150,
 });
 
-// Handle window resize
 $(window).resize(() => boardUI.resize());
 </script>
 </body>
