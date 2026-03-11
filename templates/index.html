@@ -1,0 +1,772 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chess Analyzer — Stockfish</title>
+<link rel="stylesheet" href="/static/css/chessboard.min.css">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: #1a1a2e;
+    color: #e0e0e0;
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  header {
+    width: 100%;
+    padding: 16px 24px;
+    background: #16213e;
+    border-bottom: 2px solid #0f3460;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+  }
+
+  header h1 {
+    font-size: 20px;
+    font-weight: 600;
+    color: #e94560;
+  }
+
+  header span {
+    font-size: 13px;
+    color: #888;
+  }
+
+  .container {
+    display: flex;
+    gap: 24px;
+    padding: 24px;
+    max-width: 1100px;
+    width: 100%;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .board-section {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  #board {
+    width: 520px;
+    height: 520px;
+  }
+
+  .controls {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .controls button {
+    padding: 8px 16px;
+    border: 1px solid #0f3460;
+    background: #16213e;
+    color: #e0e0e0;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+    transition: all 0.15s;
+  }
+
+  .controls button:hover {
+    background: #0f3460;
+    border-color: #e94560;
+  }
+
+  .fen-input {
+    display: flex;
+    gap: 8px;
+  }
+
+  .fen-input input {
+    flex: 1;
+    padding: 8px 12px;
+    background: #16213e;
+    border: 1px solid #0f3460;
+    color: #e0e0e0;
+    border-radius: 6px;
+    font-size: 13px;
+    font-family: monospace;
+  }
+
+  .fen-input input::placeholder { color: #555; }
+
+  .panel {
+    width: 320px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .card {
+    background: #16213e;
+    border: 1px solid #0f3460;
+    border-radius: 10px;
+    overflow: hidden;
+  }
+
+  .card-header {
+    padding: 10px 14px;
+    background: #0f3460;
+    font-size: 13px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #aaa;
+  }
+
+  .card-body {
+    padding: 12px 14px;
+  }
+
+  /* Eval bar */
+  .eval-container {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .eval-bar-wrap {
+    flex: 1;
+    height: 28px;
+    background: #333;
+    border-radius: 6px;
+    overflow: hidden;
+    position: relative;
+  }
+
+  .eval-bar-fill {
+    height: 100%;
+    background: #f0f0f0;
+    transition: width 0.4s ease;
+    width: 50%;
+  }
+
+  .eval-score {
+    font-size: 20px;
+    font-weight: 700;
+    min-width: 70px;
+    text-align: right;
+    font-family: monospace;
+  }
+
+  .eval-score.positive { color: #f0f0f0; }
+  .eval-score.negative { color: #888; }
+  .eval-score.mate { color: #e94560; }
+
+  /* Analysis moves */
+  .analysis-move {
+    display: flex;
+    align-items: center;
+    padding: 8px 0;
+    border-bottom: 1px solid #0f3460;
+    gap: 10px;
+  }
+
+  .analysis-move:last-child { border-bottom: none; }
+
+  .analysis-rank {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+
+  .analysis-rank.rank-1 { background: #e94560; color: #fff; }
+  .analysis-rank.rank-2 { background: #0f3460; color: #ccc; }
+  .analysis-rank.rank-3 { background: #1a1a2e; color: #888; }
+
+  .analysis-details { flex: 1; min-width: 0; }
+
+  .analysis-move-name {
+    font-weight: 700;
+    font-size: 16px;
+  }
+
+  .analysis-line {
+    font-size: 11px;
+    color: #888;
+    margin-top: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .analysis-score-badge {
+    font-family: monospace;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 3px 8px;
+    border-radius: 4px;
+    background: #1a1a2e;
+    flex-shrink: 0;
+  }
+
+  /* Move history */
+  .move-history {
+    max-height: 280px;
+    overflow-y: auto;
+    font-size: 13px;
+  }
+
+  .move-history::-webkit-scrollbar { width: 6px; }
+  .move-history::-webkit-scrollbar-track { background: transparent; }
+  .move-history::-webkit-scrollbar-thumb { background: #0f3460; border-radius: 3px; }
+
+  .move-row {
+    display: flex;
+    padding: 4px 0;
+    border-bottom: 1px solid rgba(15,52,96,0.4);
+  }
+
+  .move-number {
+    width: 36px;
+    color: #555;
+    font-weight: 600;
+    flex-shrink: 0;
+  }
+
+  .move-white, .move-black {
+    width: 80px;
+    padding: 2px 6px;
+    border-radius: 3px;
+    cursor: default;
+  }
+
+  .move-white:hover, .move-black:hover {
+    background: #0f3460;
+  }
+
+  /* Status */
+  .status-bar {
+    padding: 10px 14px;
+    font-size: 13px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .turn-indicator {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .turn-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    border: 1px solid #555;
+  }
+
+  .turn-dot.white { background: #f0f0f0; }
+  .turn-dot.black { background: #333; }
+
+  .check-badge {
+    background: #e94560;
+    color: #fff;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 700;
+  }
+
+  .loading {
+    color: #e94560;
+    font-size: 12px;
+    display: none;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .loading.active { display: flex; }
+
+  .spinner {
+    width: 14px;
+    height: 14px;
+    border: 2px solid #e94560;
+    border-top-color: transparent;
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .empty-state {
+    color: #555;
+    font-size: 13px;
+    text-align: center;
+    padding: 20px;
+  }
+
+  /* Accuracy slider */
+  .accuracy-section {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .accuracy-section label {
+    font-size: 13px;
+    color: #aaa;
+    white-space: nowrap;
+  }
+
+  .accuracy-section input[type="range"] {
+    flex: 1;
+    -webkit-appearance: none;
+    height: 6px;
+    background: #0f3460;
+    border-radius: 3px;
+    outline: none;
+  }
+
+  .accuracy-section input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: #e94560;
+    cursor: pointer;
+  }
+
+  .accuracy-value {
+    font-size: 18px;
+    font-weight: 700;
+    color: #e94560;
+    min-width: 48px;
+    text-align: center;
+    font-family: monospace;
+  }
+
+  /* Recommended move */
+  .recommended-move {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    padding: 6px 0;
+  }
+
+  .recommended-label {
+    font-size: 12px;
+    color: #888;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .recommended-name {
+    font-size: 28px;
+    font-weight: 800;
+    color: #e94560;
+    font-family: monospace;
+  }
+
+  .recommended-tag {
+    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-weight: 600;
+  }
+
+  .recommended-tag.best {
+    background: #1b5e20;
+    color: #66bb6a;
+  }
+
+  .recommended-tag.good {
+    background: #e65100;
+    color: #ffb74d;
+  }
+
+  .recommended-tag.inaccuracy {
+    background: #b71c1c;
+    color: #ef9a9a;
+  }
+
+  /* Responsive */
+  @media (max-width: 900px) {
+    .container { flex-direction: column; align-items: center; }
+    #board { width: 360px; height: 360px; }
+    .panel { width: 360px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Chess Analyzer</h1>
+  <span>Stockfish Engine — Depth 20</span>
+</header>
+
+<div class="container">
+  <div class="board-section">
+    <div id="board"></div>
+    <div class="controls">
+      <button onclick="newGame()">New Game</button>
+      <button onclick="undoMove()">Undo</button>
+      <button onclick="flipBoard()">Flip Board</button>
+      <button onclick="analyzePosition()">Analyze</button>
+    </div>
+    <div class="fen-input">
+      <input type="text" id="fenInput" placeholder="Paste FEN to load position...">
+      <button class="controls" style="padding:8px 16px;border:1px solid #0f3460;background:#16213e;color:#e0e0e0;border-radius:6px;cursor:pointer;font-size:13px;" onclick="loadFen()">Load</button>
+    </div>
+
+    <!-- Accuracy -->
+    <div class="card" style="width:520px">
+      <div class="card-header">Accuracy (Human-like)</div>
+      <div class="card-body">
+        <div class="accuracy-section">
+          <label>Weak</label>
+          <input type="range" id="accuracySlider" min="40" max="100" value="65" step="5">
+          <label>Perfect</label>
+          <div class="accuracy-value" id="accuracyValue">65%</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Recommended Move -->
+    <div class="card" style="width:520px">
+      <div class="card-header">Play This Move</div>
+      <div class="card-body">
+        <div class="recommended-move" id="recommendedPanel">
+          <div class="empty-state">Make a move to get a suggestion</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <!-- Status -->
+    <div class="card">
+      <div class="status-bar">
+        <div class="turn-indicator">
+          <div class="turn-dot white" id="turnDot"></div>
+          <span id="turnText">White to move</span>
+        </div>
+        <span id="checkBadge" class="check-badge" style="display:none">CHECK</span>
+        <div class="loading" id="loading">
+          <div class="spinner"></div>
+          <span>Analyzing...</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Eval -->
+    <div class="card">
+      <div class="card-header">Evaluation</div>
+      <div class="card-body">
+        <div class="eval-container">
+          <div class="eval-bar-wrap">
+            <div class="eval-bar-fill" id="evalBar"></div>
+          </div>
+          <div class="eval-score positive" id="evalScore">0.00</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Best Moves -->
+    <div class="card">
+      <div class="card-header">Best Moves</div>
+      <div class="card-body" id="analysisPanel">
+        <div class="empty-state">Make a move or click Analyze</div>
+      </div>
+    </div>
+
+    <!-- Move History -->
+    <div class="card">
+      <div class="card-header">Move History</div>
+      <div class="card-body">
+        <div class="move-history" id="moveHistory">
+          <div class="empty-state">No moves yet</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="/static/js/jquery.min.js"></script>
+<script src="/static/js/chessboard.min.js"></script>
+<script src="/static/js/chess.min.js"></script>
+<script>
+const game = new Chess();
+let boardUI = null;
+
+// Accuracy slider
+const accuracySlider = document.getElementById('accuracySlider');
+const accuracyValue = document.getElementById('accuracyValue');
+accuracySlider.addEventListener('input', () => {
+  accuracyValue.textContent = accuracySlider.value + '%';
+});
+function getAccuracy() { return parseInt(accuracySlider.value); }
+
+function onDragStart(source, piece) {
+  if (game.game_over()) return false;
+  if ((game.turn() === 'w' && piece.search(/^b/) !== -1) ||
+      (game.turn() === 'b' && piece.search(/^w/) !== -1)) {
+    return false;
+  }
+}
+
+function onDrop(source, target) {
+  // Try normal move, then promotion
+  let move = game.move({ from: source, to: target, promotion: 'q' });
+  if (move === null) return 'snapback';
+
+  // Send to backend
+  const uci = source + target;
+  setLoading(true);
+  fetch('/api/move', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ uci: uci, accuracy: getAccuracy() })
+  })
+  .then(r => r.json())
+  .then(data => {
+    setLoading(false);
+    if (data.error) {
+      game.undo();
+      boardUI.position(game.fen());
+      return;
+    }
+    updateUI(data);
+  })
+  .catch(() => {
+    setLoading(false);
+    game.undo();
+    boardUI.position(game.fen());
+  });
+}
+
+function onSnapEnd() {
+  boardUI.position(game.fen());
+}
+
+function updateUI(data) {
+  // Sync client game with server
+  game.load(data.fen);
+  boardUI.position(data.fen, false);
+
+  // Turn
+  const dot = document.getElementById('turnDot');
+  const turnText = document.getElementById('turnText');
+  dot.className = 'turn-dot ' + data.turn;
+  turnText.textContent = (data.turn === 'white' ? 'White' : 'Black') + ' to move';
+
+  // Check
+  const checkBadge = document.getElementById('checkBadge');
+  if (data.isCheck) {
+    checkBadge.style.display = 'inline';
+  } else if (data.isGameOver) {
+    checkBadge.style.display = 'inline';
+    checkBadge.textContent = data.result === '1-0' ? 'WHITE WINS' :
+                             data.result === '0-1' ? 'BLACK WINS' : 'DRAW';
+  } else {
+    checkBadge.style.display = 'none';
+    checkBadge.textContent = 'CHECK';
+  }
+
+  // Analysis + recommended
+  if (data.analysis) {
+    renderAnalysis(data.analysis, data.turn);
+    renderRecommended(data.analysis, data.recommended);
+  }
+
+  // Move history
+  if (data.moveStack) {
+    renderHistory(data.moveStack);
+  }
+}
+
+function renderAnalysis(analysis, turn) {
+  const panel = document.getElementById('analysisPanel');
+  const evalBar = document.getElementById('evalBar');
+  const evalScore = document.getElementById('evalScore');
+
+  if (!analysis || analysis.length === 0) {
+    panel.innerHTML = '<div class="empty-state">No analysis available</div>';
+    return;
+  }
+
+  const topScore = analysis[0].score;
+
+  // Update eval bar and score
+  if (typeof topScore === 'number') {
+    const clamped = Math.max(-10, Math.min(10, topScore / 100));
+    const pct = 50 + (clamped * 5);
+    evalBar.style.width = pct + '%';
+    const display = (topScore / 100).toFixed(2);
+    evalScore.textContent = (topScore >= 0 ? '+' : '') + display;
+    evalScore.className = 'eval-score ' + (topScore >= 0 ? 'positive' : 'negative');
+  } else {
+    // Mate score
+    evalScore.textContent = topScore;
+    evalScore.className = 'eval-score mate';
+    evalBar.style.width = topScore.includes('-') ? '5%' : '95%';
+  }
+
+  let html = '';
+  analysis.forEach((m, i) => {
+    const rankClass = i < 3 ? `rank-${i+1}` : 'rank-3';
+    const scoreStr = typeof m.score === 'number' ?
+      ((m.score >= 0 ? '+' : '') + (m.score / 100).toFixed(2)) : m.score;
+    html += `
+      <div class="analysis-move">
+        <div class="analysis-rank ${rankClass}">${i+1}</div>
+        <div class="analysis-details">
+          <div class="analysis-move-name">${m.move}</div>
+          <div class="analysis-line">${m.line}</div>
+        </div>
+        <div class="analysis-score-badge">${scoreStr}</div>
+      </div>`;
+  });
+  panel.innerHTML = html;
+}
+
+function renderRecommended(analysis, pickIndex) {
+  const panel = document.getElementById('recommendedPanel');
+  if (!analysis || analysis.length === 0) {
+    panel.innerHTML = '<div class="empty-state">No suggestion</div>';
+    return;
+  }
+  const pick = analysis[pickIndex || 0];
+  let tagClass, tagText;
+  if (pickIndex === 0) {
+    tagClass = 'best'; tagText = 'BEST MOVE';
+  } else if (pickIndex === 1) {
+    tagClass = 'good'; tagText = 'GOOD MOVE';
+  } else {
+    tagClass = 'inaccuracy'; tagText = 'INACCURACY';
+  }
+  const scoreStr = typeof pick.score === 'number' ?
+    ((pick.score >= 0 ? '+' : '') + (pick.score / 100).toFixed(2)) : pick.score;
+  panel.innerHTML = `
+    <div style="text-align:center">
+      <div class="recommended-label">Play this</div>
+      <div class="recommended-name">${pick.move}</div>
+      <span class="recommended-tag ${tagClass}">${tagText}</span>
+      <div style="margin-top:6px;font-size:12px;color:#666">${scoreStr} eval</div>
+    </div>`;
+}
+
+function renderHistory(moves) {
+  const el = document.getElementById('moveHistory');
+  if (!moves || moves.length === 0) {
+    el.innerHTML = '<div class="empty-state">No moves yet</div>';
+    return;
+  }
+
+  let html = '';
+  for (let i = 0; i < moves.length; i += 2) {
+    const w = moves[i];
+    const b = moves[i + 1];
+    html += `<div class="move-row">
+      <span class="move-number">${w.number}.</span>
+      <span class="move-white">${w.san}</span>
+      <span class="move-black">${b ? b.san : ''}</span>
+    </div>`;
+  }
+  el.innerHTML = html;
+  el.scrollTop = el.scrollHeight;
+}
+
+function setLoading(on) {
+  document.getElementById('loading').className = 'loading' + (on ? ' active' : '');
+}
+
+function newGame() {
+  fetch('/api/reset', { method: 'POST' })
+    .then(r => r.json())
+    .then(data => {
+      game.reset();
+      boardUI.start(false);
+      updateUI(data);
+      document.getElementById('analysisPanel').innerHTML = '<div class="empty-state">Make a move or click Analyze</div>';
+      document.getElementById('recommendedPanel').innerHTML = '<div class="empty-state">Make a move to get a suggestion</div>';
+      document.getElementById('evalBar').style.width = '50%';
+      document.getElementById('evalScore').textContent = '0.00';
+      document.getElementById('evalScore').className = 'eval-score positive';
+    });
+}
+
+function undoMove() {
+  fetch('/api/undo', { method: 'POST' })
+    .then(r => r.json())
+    .then(data => {
+      game.load(data.fen);
+      boardUI.position(data.fen, true);
+      updateUI(data);
+    });
+}
+
+function flipBoard() {
+  boardUI.flip();
+}
+
+function analyzePosition() {
+  setLoading(true);
+  fetch('/api/analyze', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ accuracy: getAccuracy() })
+  })
+    .then(r => r.json())
+    .then(data => {
+      setLoading(false);
+      updateUI(data);
+    })
+    .catch(() => setLoading(false));
+}
+
+function loadFen() {
+  const fen = document.getElementById('fenInput').value.trim();
+  if (!fen) return;
+  fetch('/api/fen', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fen: fen })
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.error) {
+      alert('Invalid FEN: ' + data.error);
+      return;
+    }
+    game.load(data.fen);
+    boardUI.position(data.fen, false);
+    updateUI(data);
+  });
+}
+
+// Init board
+boardUI = Chessboard('board', {
+  draggable: true,
+  position: 'start',
+  onDragStart: onDragStart,
+  onDrop: onDrop,
+  onSnapEnd: onSnapEnd,
+  pieceTheme: '/static/img/pieces/{piece}.png',
+  animationDuration: 150,
+});
+
+// Handle window resize
+$(window).resize(() => boardUI.resize());
+</script>
+</body>
+</html>
