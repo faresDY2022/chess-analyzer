@@ -11,7 +11,22 @@ import os
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "chess-analyzer-secret-key-2026")
 
-STOCKFISH_PATH = shutil.which("stockfish") or os.environ.get("STOCKFISH_PATH", "/opt/homebrew/bin/stockfish")
+def find_stockfish():
+    # Check PATH first
+    found = shutil.which("stockfish")
+    if found:
+        return found
+    # Check env var
+    env = os.environ.get("STOCKFISH_PATH")
+    if env and os.path.isfile(env):
+        return env
+    # Common paths
+    for path in ["/usr/games/stockfish", "/usr/bin/stockfish", "/usr/local/bin/stockfish", "/opt/homebrew/bin/stockfish"]:
+        if os.path.isfile(path):
+            return path
+    return "stockfish"
+
+STOCKFISH_PATH = find_stockfish()
 DEPTH = 20
 TOP_MOVES = 5
 
