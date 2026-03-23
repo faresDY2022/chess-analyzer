@@ -7,6 +7,7 @@ import chess.engine
 import random
 import shutil
 import os
+import threading
 
 app = Flask(__name__)
 
@@ -29,6 +30,7 @@ DEPTH = 20
 TOP_MOVES = 5
 
 engine = None
+engine_lock = threading.Lock()
 
 
 def get_engine():
@@ -55,7 +57,13 @@ def analyze_position(brd, depth=DEPTH, top_n=TOP_MOVES):
     if eng is None:
         return []
     try:
-        results = eng.analyse(brd, chess.engine.Limit(depth=depth), multipv=top_n)
+        with engine_lock:
+            results = eng.analyse(brd, chess.engine.Limit(depth=depth), multipv=top_n)
+    except chess.engine.EngineTerminatedError:
+        print("Engine crashed, restarting...")
+        global engine
+        engine = None
+        return []
     except Exception as e:
         print(f"Analysis error: {e}")
         return []
